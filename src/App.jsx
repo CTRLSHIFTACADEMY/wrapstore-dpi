@@ -12,6 +12,7 @@ import EditProduct from './pages/EditProduct'
 import ProductApproval from './pages/ProductApproval'
 import Inventory from './pages/Inventory'
 import Settings from './pages/Settings'
+import SystemStatus from './pages/SystemStatus'
 import Billing from './pages/Billing'
 import Invoices from './pages/Invoices'
 import Customers from './pages/Customers'
@@ -98,6 +99,7 @@ const AppRoutes = () => (
 
       {/* Settings */}
       <Route path="settings" element={<Settings />} />
+      <Route path="settings/system-status" element={<SystemStatus />} />
     </Route>
 
     <Route path="*" element={<Navigate to="/dashboard" replace />} />

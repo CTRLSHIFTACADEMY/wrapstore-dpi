@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Tag, Package, Warehouse,
   Settings, LogOut, ShieldCheck, Smartphone,
   Receipt, FileText, Users, TrendingUp, Sparkles,
-  BarChart2, FileBarChart
+  BarChart2, FileBarChart, Activity
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
@@ -124,6 +124,7 @@ const Sidebar = () => {
         <div style={{ height: '8px' }} />
         <div className="sidebar-section-label">System</div>
         <NavItem to="/settings" icon={Settings} label="Settings" />
+        <NavItem to="/settings/system-status" icon={Activity} label="System Status" />
       </nav>
 
       {/* User Footer */}

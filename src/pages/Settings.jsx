@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Save, Store, Phone, MapPin, FileText,
-  Upload, Image as ImageIcon, X, Building2, Receipt
+  Upload, Image as ImageIcon, X, Building2, Receipt, Activity
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/supabase'
@@ -9,6 +10,7 @@ import { useAuth } from '../contexts/AuthContext'
 
 const Settings = () => {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const logoRef = useRef()
 
   const [settingsId, setSettingsId] = useState(null)
@@ -299,6 +301,34 @@ const Settings = () => {
               rows={2}
             />
           </div>
+        </div>
+      </div>
+
+      {/* System Status */}
+      <div className="card" style={{ marginBottom: '20px' }}>
+        <div className="card-header">
+          <div>
+            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Activity size={16} /> System Status
+            </span>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+              Verify Supabase, PostgreSQL, Auth, and Storage connectivity
+            </div>
+          </div>
+        </div>
+        <div className="card-body">
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '14px', lineHeight: 1.6 }}>
+            Run a full end-to-end connection diagnostic. Tests real API calls against Supabase,
+            PostgreSQL (READ / WRITE / UPDATE / DELETE), Authentication, Row Level Security, and Storage.
+          </p>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => navigate('/settings/system-status')}
+            id="open-system-status-btn"
+          >
+            <Activity size={13} /> Open System Status
+          </button>
         </div>
       </div>
 
