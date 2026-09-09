@@ -6,11 +6,20 @@ import {
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import ProductImageHover from '../components/common/ProductImageHover'
 
-const PRODUCT_TYPES = {
-  iphone_case: 'iPhone Case',
-  samsung_case: 'Samsung Case',
-  mobile_sticker: 'Mobile Sticker',
+const formatProductType = (p) => {
+  if (p?.categories?.name) return p.categories.name
+  const type = p?.product_type || (typeof p === 'string' ? p : '')
+  if (!type) return 'General'
+  const known = {
+    iphone_case: 'iPhone Case',
+    samsung_case: 'Samsung Case',
+    mobile_sticker: 'Mobile Sticker',
+    accessories: 'Accessories',
+  }
+  if (known[type]) return known[type]
+  return type.split(/[-_]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
 }
 
 const ProductApproval = () => {
@@ -127,13 +136,8 @@ const ProductApproval = () => {
               <div key={p.id} className="card" style={{ overflow: 'hidden' }}>
                 {/* Summary Row */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px 20px' }}>
-                  {/* Image */}
-                  <div style={{ width: 56, height: 56, borderRadius: 'var(--radius)', overflow: 'hidden', background: 'var(--bg-main)', border: '1px solid var(--border)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {imgUrl
-                      ? <img src={imgUrl} alt={p.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      : <ImageIcon size={18} color="var(--text-muted)" />
-                    }
-                  </div>
+                  {/* Image with Hover Preview */}
+                  <ProductImageHover src={imgUrl} title={p.name} alt={p.name} size={56} />
 
                   {/* Info */}
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -141,7 +145,7 @@ const ProductApproval = () => {
                       <code style={{ fontSize: '11px', background: '#f3f4f6', padding: '2px 6px', borderRadius: 4, fontFamily: 'monospace' }}>
                         Pending ID
                       </code>
-                      <span className="product-type-tag">{PRODUCT_TYPES[p.product_type]}</span>
+                      <span className="product-type-tag">{formatProductType(p)}</span>
                     </div>
                     <div style={{ fontWeight: 700, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {p.name}
@@ -198,11 +202,12 @@ const ProductApproval = () => {
                       <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '10px' }}>Product Details</div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px' }}>
                         {[
-                          ['Type', PRODUCT_TYPES[p.product_type]],
+                          ['Type', formatProductType(p)],
                           ['Category', p.categories?.name || '—'],
                           ['Subcategory', p.subcategories?.name || '—'],
                           ['Brand', p.mobile_brand || '—'],
                           ['Model', p.mobile_model || '—'],
+                          ['Colors', p.color_variants || '—'],
                         ].map(([k, v]) => (
                           <div key={k} style={{ display: 'flex', gap: '8px' }}>
                             <span style={{ color: 'var(--text-muted)', minWidth: '80px' }}>{k}</span>
@@ -215,12 +220,12 @@ const ProductApproval = () => {
                       <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '10px' }}>Pricing & Stock</div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px' }}>
                         {[
-                          ['Purchase Price', `₹${Number(p.purchase_price).toLocaleString('en-IN')}`],
-                          ['Selling Price', `₹${Number(p.selling_price).toLocaleString('en-IN')}`],
-                          ['Discount', `${p.discount_percentage}%`],
-                          ['GST', `${p.gst_percentage}%`],
-                          ['Initial Stock', p.current_stock],
-                          ['Min Stock Level', p.min_stock_level],
+                          ['Purchase Price', `₹${Number(p.purchase_price || 0).toLocaleString('en-IN')}`],
+                          ['Selling Price', `₹${Number(p.selling_price || 0).toLocaleString('en-IN')}`],
+                          ['Discount', `${p.discount_percentage || 0}%`],
+                          ['GST', `${p.gst_percentage || 0}%`],
+                          ['Initial Stock', p.current_stock ?? 0],
+                          ['Min Stock Level', p.min_stock_level ?? 0],
                         ].map(([k, v]) => (
                           <div key={k} style={{ display: 'flex', gap: '8px' }}>
                             <span style={{ color: 'var(--text-muted)', minWidth: '100px' }}>{k}</span>

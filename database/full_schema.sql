@@ -1,21 +1,19 @@
 -- ============================================================
--- WRAPSTORE DATABASE SCHEMA
--- Run this entire file in Supabase SQL Editor
--- Stage 1: Admin + Products + Categories + Inventory
--- Stage 2 ready: customers, invoices, invoice_items, payments
+-- WRAPSTORE COMPLETE DATABASE SCHEMA (ALL STAGES)
+-- Execute this entire file in Supabase SQL Editor for new setup
 -- ============================================================
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ============================================================
--- PRODUCT ID SEQUENCE
+-- SEQUENCES
 -- ============================================================
 CREATE SEQUENCE IF NOT EXISTS product_id_seq START 1;
+CREATE SEQUENCE IF NOT EXISTS invoice_id_seq START 1;
 
 -- ============================================================
--- PROFILES
--- Linked to Supabase auth.users
+-- 1. PROFILES (Linked to Supabase auth.users)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS profiles (
   id            UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -32,7 +30,7 @@ CREATE TABLE IF NOT EXISTS profiles (
 CREATE INDEX IF NOT EXISTS idx_profiles_role ON profiles(role);
 
 -- ============================================================
--- STORE SETTINGS
+-- 2. STORE SETTINGS
 -- ============================================================
 CREATE TABLE IF NOT EXISTS store_settings (
   id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -49,13 +47,12 @@ CREATE TABLE IF NOT EXISTS store_settings (
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Insert default store settings
 INSERT INTO store_settings (store_name, address, phone)
 VALUES ('WRAPSTORE', 'Railway Station Rd, Dharmapuri, Tamil Nadu, India - 636701', '+91 81227 47947')
 ON CONFLICT DO NOTHING;
 
 -- ============================================================
--- CATEGORIES
+-- 3. CATEGORIES & SUBCATEGORIES
 -- ============================================================
 CREATE TABLE IF NOT EXISTS categories (
   id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -71,9 +68,6 @@ CREATE TABLE IF NOT EXISTS categories (
 CREATE INDEX IF NOT EXISTS idx_categories_active ON categories(is_active);
 CREATE INDEX IF NOT EXISTS idx_categories_sort ON categories(sort_order);
 
--- ============================================================
--- SUBCATEGORIES
--- ============================================================
 CREATE TABLE IF NOT EXISTS subcategories (
   id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   category_id UUID NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
@@ -91,14 +85,13 @@ CREATE INDEX IF NOT EXISTS idx_subcategories_category ON subcategories(category_
 CREATE INDEX IF NOT EXISTS idx_subcategories_active ON subcategories(is_active);
 
 -- ============================================================
--- PRODUCTS
+-- 4. PRODUCTS
 -- ============================================================
 CREATE TABLE IF NOT EXISTS products (
   id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   product_id          TEXT UNIQUE,                    -- WS-000001 (auto-generated)
   name                TEXT NOT NULL,
-  product_type        TEXT NOT NULL
-                        CHECK (product_type IN ('iphone_case', 'samsung_case', 'mobile_sticker')),
+  product_type        TEXT NOT NULL DEFAULT 'general',
   category_id         UUID REFERENCES categories(id) ON DELETE SET NULL,
   subcategory_id      UUID REFERENCES subcategories(id) ON DELETE SET NULL,
   mobile_brand        TEXT,
@@ -131,9 +124,7 @@ CREATE INDEX IF NOT EXISTS idx_products_brand ON products(mobile_brand);
 CREATE INDEX IF NOT EXISTS idx_products_model ON products(mobile_model);
 CREATE INDEX IF NOT EXISTS idx_products_stock ON products(current_stock);
 
--- ============================================================
--- AUTO-GENERATE PRODUCT ID TRIGGER
--- ============================================================
+-- Auto-generate product ID (WS-000001)
 CREATE OR REPLACE FUNCTION generate_product_id()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -150,9 +141,7 @@ CREATE TRIGGER trigger_generate_product_id
   FOR EACH ROW
   EXECUTE FUNCTION generate_product_id();
 
--- ============================================================
--- UPDATED_AT TRIGGER FUNCTION
--- ============================================================
+-- Updated_at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -186,9 +175,7 @@ CREATE TRIGGER trigger_profiles_updated_at
   BEFORE UPDATE ON profiles
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
--- ============================================================
--- PRODUCT IMAGES
--- ============================================================
+-- Product Images
 CREATE TABLE IF NOT EXISTS product_images (
   id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   product_id   UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -204,10 +191,7 @@ CREATE TABLE IF NOT EXISTS product_images (
 CREATE INDEX IF NOT EXISTS idx_product_images_product ON product_images(product_id);
 CREATE INDEX IF NOT EXISTS idx_product_images_primary ON product_images(is_primary);
 
--- ============================================================
--- INVENTORY MOVEMENTS
--- Full audit trail - never silently overwrite stock
--- ============================================================
+-- Inventory Movements Audit Log
 CREATE TABLE IF NOT EXISTS inventory_movements (
   id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   product_id     UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -219,13 +203,13 @@ CREATE TABLE IF NOT EXISTS inventory_movements (
                      'MANUAL_ADJUSTMENT',
                      'DAMAGED',
                      'CUSTOMER_RETURN',
-                     'SALE'               -- Used in Stage 2
+                     'SALE'
                    )),
   quantity       INT NOT NULL,
   previous_stock INT NOT NULL,
   new_stock      INT NOT NULL,
   reason         TEXT,
-  reference_id   TEXT,                   -- Stage 2: invoice ID
+  reference_id   TEXT,
   performed_by   UUID REFERENCES profiles(id) ON DELETE SET NULL,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -236,14 +220,134 @@ CREATE INDEX IF NOT EXISTS idx_inv_movements_date ON inventory_movements(created
 CREATE INDEX IF NOT EXISTS idx_inv_movements_user ON inventory_movements(performed_by);
 
 -- ============================================================
--- SEED DATA: DEFAULT CATEGORIES & SUBCATEGORIES
+-- 5. CUSTOMERS, INVOICES, INVOICE ITEMS & PAYMENTS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS customers (
+  id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name         TEXT NOT NULL,
+  phone        TEXT NOT NULL,
+  email        TEXT,
+  address      TEXT,
+  gstin        TEXT,
+  total_orders INT NOT NULL DEFAULT 0,
+  total_spent  NUMERIC(12,2) NOT NULL DEFAULT 0,
+  last_purchase_at TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
+CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
+
+CREATE TABLE IF NOT EXISTS invoices (
+  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  invoice_number    TEXT UNIQUE NOT NULL,            -- WS-INV-000001
+  customer_id       UUID REFERENCES customers(id) ON DELETE SET NULL,
+  customer_name     TEXT NOT NULL,
+  customer_phone    TEXT NOT NULL,
+  subtotal          NUMERIC(10,2) NOT NULL DEFAULT 0,
+  discount_amount   NUMERIC(10,2) NOT NULL DEFAULT 0,
+  taxable_amount    NUMERIC(10,2) NOT NULL DEFAULT 0,
+  gst_amount        NUMERIC(10,2) NOT NULL DEFAULT 0,
+  grand_total       NUMERIC(10,2) NOT NULL DEFAULT 0,
+  payment_method    TEXT NOT NULL DEFAULT 'Cash'
+                      CHECK (payment_method IN ('Cash', 'UPI', 'Card', 'Other')),
+  payment_status    TEXT NOT NULL DEFAULT 'PAID'
+                      CHECK (payment_status IN ('PAID', 'PENDING', 'CANCELLED')),
+  notes             TEXT,
+  pdf_url           TEXT,
+  whatsapp_status   TEXT NOT NULL DEFAULT 'PENDING'
+                      CHECK (whatsapp_status IN ('PENDING', 'SENT', 'FAILED')),
+  whatsapp_sent_at  TIMESTAMPTZ,
+  whatsapp_error   TEXT,
+  whatsapp_message_id TEXT,
+  created_by        UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_invoices_number ON invoices(invoice_number);
+CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_date ON invoices(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(payment_status);
+CREATE INDEX IF NOT EXISTS idx_invoices_whatsapp_status ON invoices(whatsapp_status);
+
+-- Auto-generate invoice number (WS-INV-000001)
+CREATE OR REPLACE FUNCTION generate_invoice_number()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.invoice_number IS NULL OR NEW.invoice_number = '' THEN
+    NEW.invoice_number := 'WS-INV-' || LPAD(nextval('invoice_id_seq')::TEXT, 6, '0');
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_generate_invoice_number ON invoices;
+CREATE TRIGGER trigger_generate_invoice_number
+  BEFORE INSERT ON invoices
+  FOR EACH ROW
+  EXECUTE FUNCTION generate_invoice_number();
+
+CREATE TABLE IF NOT EXISTS invoice_items (
+  id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  invoice_id       UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  product_id       UUID REFERENCES products(id) ON DELETE SET NULL,
+  product_id_code  TEXT NOT NULL,
+  product_name     TEXT NOT NULL,
+  product_type     TEXT NOT NULL,
+  mobile_brand     TEXT,
+  mobile_model     TEXT,
+  quantity         INT NOT NULL CHECK (quantity > 0),
+  unit_price       NUMERIC(10,2) NOT NULL,
+  discount_pct     NUMERIC(5,2) NOT NULL DEFAULT 0,
+  gst_pct          NUMERIC(5,2) NOT NULL DEFAULT 0,
+  line_total       NUMERIC(10,2) NOT NULL,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice ON invoice_items(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_invoice_items_product ON invoice_items(product_id);
+
+CREATE TABLE IF NOT EXISTS payments (
+  id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  invoice_id     UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  amount         NUMERIC(10,2) NOT NULL,
+  payment_method TEXT NOT NULL,
+  reference      TEXT,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_payments_invoice ON payments(invoice_id);
+
+-- ============================================================
+-- 6. WHATSAPP LOGS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS whatsapp_logs (
+  id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  invoice_id       UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  customer_id      UUID REFERENCES customers(id) ON DELETE SET NULL,
+  recipient_phone  TEXT NOT NULL,
+  message_body     TEXT NOT NULL,
+  pdf_url          TEXT,
+  status           TEXT NOT NULL CHECK (status IN ('PENDING', 'SENT', 'FAILED')),
+  response_payload JSONB,
+  error_message    TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_whatsapp_logs_invoice ON whatsapp_logs(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_logs_status ON whatsapp_logs(status);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_logs_created ON whatsapp_logs(created_at DESC);
+
+-- ============================================================
+-- 7. SEED DATA: CATEGORIES & SUBCATEGORIES
 -- ============================================================
 INSERT INTO categories (name, slug, description, sort_order) VALUES
   ('Mobile Cases', 'mobile-cases', 'Protective cases for mobile phones', 1),
   ('Mobile Stickers', 'mobile-stickers', 'Decorative stickers for mobile devices', 2)
 ON CONFLICT (slug) DO NOTHING;
 
--- Subcategories for Mobile Cases
 INSERT INTO subcategories (category_id, name, slug, description, sort_order)
 SELECT c.id, 'iPhone Cases', 'iphone-cases', 'Cases for all iPhone models', 1
 FROM categories c WHERE c.slug = 'mobile-cases'
@@ -254,7 +358,6 @@ SELECT c.id, 'Samsung Premium Cases', 'samsung-premium-cases', 'Premium cases fo
 FROM categories c WHERE c.slug = 'mobile-cases'
 ON CONFLICT (category_id, slug) DO NOTHING;
 
--- Subcategories for Mobile Stickers
 INSERT INTO subcategories (category_id, name, slug, description, sort_order)
 SELECT c.id, 'Individual Stickers', 'individual-stickers', 'Single sticker designs', 1
 FROM categories c WHERE c.slug = 'mobile-stickers'
@@ -266,7 +369,7 @@ FROM categories c WHERE c.slug = 'mobile-stickers'
 ON CONFLICT (category_id, slug) DO NOTHING;
 
 -- ============================================================
--- AUTO-CREATE PROFILE ON NEW USER SIGNUP
+-- 8. AUTO-CREATE PROFILE TRIGGER FOR NEW SUPABASE AUTH USERS
 -- ============================================================
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
@@ -295,10 +398,8 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW EXECUTE FUNCTION handle_new_user();
 
 -- ============================================================
--- ROW LEVEL SECURITY (RLS)
+-- 9. ROW LEVEL SECURITY (RLS) POLICIES
 -- ============================================================
-
--- Enable RLS
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE store_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
@@ -306,170 +407,100 @@ ALTER TABLE subcategories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE product_images ENABLE ROW LEVEL SECURITY;
 ALTER TABLE inventory_movements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE invoice_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE whatsapp_logs ENABLE ROW LEVEL SECURITY;
 
--- Helper function: get current user role
 CREATE OR REPLACE FUNCTION get_user_role()
 RETURNS TEXT AS $$
   SELECT role FROM public.profiles WHERE id = auth.uid();
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = public;
 
--- ---- PROFILES ----
+-- Profiles Policies
 DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
-CREATE POLICY "Users can view own profile"
-  ON profiles FOR SELECT
-  USING (id = auth.uid());
+CREATE POLICY "Users can view own profile" ON profiles FOR SELECT USING (id = auth.uid());
 
 DROP POLICY IF EXISTS "Super admins can view all profiles" ON profiles;
-CREATE POLICY "Super admins can view all profiles"
-  ON profiles FOR SELECT
-  USING (get_user_role() = 'super_admin');
+CREATE POLICY "Super admins can view all profiles" ON profiles FOR SELECT USING (get_user_role() = 'super_admin');
 
 DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
-CREATE POLICY "Users can update own profile"
-  ON profiles FOR UPDATE
-  USING (id = auth.uid());
+CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (id = auth.uid());
 
--- ---- STORE SETTINGS ----
+-- Store Settings Policies
 DROP POLICY IF EXISTS "Authenticated users can read settings" ON store_settings;
-CREATE POLICY "Authenticated users can read settings"
-  ON store_settings FOR SELECT
-  TO authenticated
-  USING (TRUE);
+CREATE POLICY "Authenticated users can read settings" ON store_settings FOR SELECT TO authenticated USING (TRUE);
 
 DROP POLICY IF EXISTS "Super admin can update settings" ON store_settings;
-CREATE POLICY "Super admin can update settings"
-  ON store_settings FOR UPDATE
-  USING (get_user_role() IN ('super_admin', 'store_manager'));
+CREATE POLICY "Super admin can update settings" ON store_settings FOR UPDATE USING (get_user_role() IN ('super_admin', 'store_manager'));
 
 DROP POLICY IF EXISTS "Super admin can insert settings" ON store_settings;
-CREATE POLICY "Super admin can insert settings"
-  ON store_settings FOR INSERT
-  WITH CHECK (get_user_role() = 'super_admin');
+CREATE POLICY "Super admin can insert settings" ON store_settings FOR INSERT WITH CHECK (get_user_role() = 'super_admin');
 
--- ---- CATEGORIES ----
+-- Categories Policies
 DROP POLICY IF EXISTS "Authenticated can read categories" ON categories;
-CREATE POLICY "Authenticated can read categories"
-  ON categories FOR SELECT
-  TO authenticated USING (TRUE);
+CREATE POLICY "Authenticated can read categories" ON categories FOR SELECT TO authenticated USING (TRUE);
 
 DROP POLICY IF EXISTS "Authenticated can manage categories" ON categories;
-CREATE POLICY "Authenticated can manage categories"
-  ON categories FOR ALL
-  TO authenticated USING (TRUE) WITH CHECK (TRUE);
+CREATE POLICY "Authenticated can manage categories" ON categories FOR ALL TO authenticated USING (TRUE) WITH CHECK (TRUE);
 
--- ---- SUBCATEGORIES ----
+-- Subcategories Policies
 DROP POLICY IF EXISTS "Authenticated can read subcategories" ON subcategories;
-CREATE POLICY "Authenticated can read subcategories"
-  ON subcategories FOR SELECT
-  TO authenticated USING (TRUE);
+CREATE POLICY "Authenticated can read subcategories" ON subcategories FOR SELECT TO authenticated USING (TRUE);
 
 DROP POLICY IF EXISTS "Authenticated can manage subcategories" ON subcategories;
-CREATE POLICY "Authenticated can manage subcategories"
-  ON subcategories FOR ALL
-  TO authenticated USING (TRUE) WITH CHECK (TRUE);
+CREATE POLICY "Authenticated can manage subcategories" ON subcategories FOR ALL TO authenticated USING (TRUE) WITH CHECK (TRUE);
 
--- ---- PRODUCTS ----
+-- Products Policies
 DROP POLICY IF EXISTS "Authenticated can read products" ON products;
-CREATE POLICY "Authenticated can read products"
-  ON products FOR SELECT
-  TO authenticated USING (TRUE);
+CREATE POLICY "Authenticated can read products" ON products FOR SELECT TO authenticated USING (TRUE);
 
 DROP POLICY IF EXISTS "Authenticated can insert products" ON products;
-CREATE POLICY "Authenticated can insert products"
-  ON products FOR INSERT
-  TO authenticated WITH CHECK (TRUE);
+CREATE POLICY "Authenticated can insert products" ON products FOR INSERT TO authenticated WITH CHECK (TRUE);
 
 DROP POLICY IF EXISTS "Creators can update own products" ON products;
-CREATE POLICY "Creators can update own products"
-  ON products FOR UPDATE
-  TO authenticated
-  USING (created_by = auth.uid() OR get_user_role() IN ('super_admin'));
+CREATE POLICY "Creators can update own products" ON products FOR UPDATE TO authenticated USING (created_by = auth.uid() OR get_user_role() IN ('super_admin'));
 
 DROP POLICY IF EXISTS "Super admin can update any product" ON products;
-CREATE POLICY "Super admin can update any product"
-  ON products FOR UPDATE
-  USING (get_user_role() = 'super_admin');
+CREATE POLICY "Super admin can update any product" ON products FOR UPDATE USING (get_user_role() = 'super_admin');
 
 DROP POLICY IF EXISTS "Super admin can delete products" ON products;
-CREATE POLICY "Super admin can delete products"
-  ON products FOR DELETE
-  USING (get_user_role() = 'super_admin');
+CREATE POLICY "Super admin can delete products" ON products FOR DELETE USING (get_user_role() = 'super_admin');
 
--- ---- PRODUCT IMAGES ----
+-- Product Images Policies
 DROP POLICY IF EXISTS "Authenticated can manage product images" ON product_images;
-CREATE POLICY "Authenticated can manage product images"
-  ON product_images FOR ALL
-  TO authenticated USING (TRUE) WITH CHECK (TRUE);
+CREATE POLICY "Authenticated can manage product images" ON product_images FOR ALL TO authenticated USING (TRUE) WITH CHECK (TRUE);
 
--- ---- INVENTORY MOVEMENTS ----
+-- Inventory Movements Policies
 DROP POLICY IF EXISTS "Authenticated can read inventory movements" ON inventory_movements;
-CREATE POLICY "Authenticated can read inventory movements"
-  ON inventory_movements FOR SELECT
-  TO authenticated USING (TRUE);
+CREATE POLICY "Authenticated can read inventory movements" ON inventory_movements FOR SELECT TO authenticated USING (TRUE);
 
 DROP POLICY IF EXISTS "Authenticated can insert inventory movements" ON inventory_movements;
-CREATE POLICY "Authenticated can insert inventory movements"
-  ON inventory_movements FOR INSERT
-  TO authenticated WITH CHECK (TRUE);
+CREATE POLICY "Authenticated can insert inventory movements" ON inventory_movements FOR INSERT TO authenticated WITH CHECK (TRUE);
 
--- ============================================================
--- SUPABASE STORAGE BUCKET
--- Run separately in Supabase Dashboard > Storage
--- Or uncomment and run here if you have storage extension
--- ============================================================
--- INSERT INTO storage.buckets (id, name, public)
--- VALUES ('product-images', 'product-images', TRUE)
--- ON CONFLICT (id) DO NOTHING;
+-- Customers Policies
+DROP POLICY IF EXISTS "Authenticated can manage customers" ON customers;
+CREATE POLICY "Authenticated can manage customers" ON customers FOR ALL TO authenticated USING (TRUE) WITH CHECK (TRUE);
 
--- ============================================================
--- STAGE 2 READY TABLES (leave empty, create when needed)
--- Uncomment and run when building Stage 2
--- ============================================================
-/*
-CREATE TABLE IF NOT EXISTS customers (
-  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name        TEXT NOT NULL,
-  phone       TEXT,
-  email       TEXT,
-  address     TEXT,
-  gstin       TEXT,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+-- Invoices Policies
+DROP POLICY IF EXISTS "Authenticated can manage invoices" ON invoices;
+CREATE POLICY "Authenticated can manage invoices" ON invoices FOR ALL TO authenticated USING (TRUE) WITH CHECK (TRUE);
 
-CREATE TABLE IF NOT EXISTS invoices (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  invoice_number  TEXT UNIQUE NOT NULL,
-  customer_id     UUID REFERENCES customers(id),
-  subtotal        NUMERIC(10,2) NOT NULL DEFAULT 0,
-  discount_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
-  gst_amount      NUMERIC(10,2) NOT NULL DEFAULT 0,
-  total_amount    NUMERIC(10,2) NOT NULL DEFAULT 0,
-  payment_method  TEXT,
-  payment_status  TEXT DEFAULT 'PAID',
-  notes           TEXT,
-  created_by      UUID REFERENCES profiles(id),
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+-- Invoice Items Policies
+DROP POLICY IF EXISTS "Authenticated can manage invoice items" ON invoice_items;
+CREATE POLICY "Authenticated can manage invoice items" ON invoice_items FOR ALL TO authenticated USING (TRUE) WITH CHECK (TRUE);
 
-CREATE TABLE IF NOT EXISTS invoice_items (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  invoice_id      UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
-  product_id      UUID NOT NULL REFERENCES products(id),
-  quantity        INT NOT NULL,
-  unit_price      NUMERIC(10,2) NOT NULL,
-  discount_pct    NUMERIC(5,2) DEFAULT 0,
-  gst_pct         NUMERIC(5,2) DEFAULT 18,
-  total_price     NUMERIC(10,2) NOT NULL,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+-- Payments Policies
+DROP POLICY IF EXISTS "Authenticated can manage payments" ON payments;
+CREATE POLICY "Authenticated can manage payments" ON payments FOR ALL TO authenticated USING (TRUE) WITH CHECK (TRUE);
 
-CREATE TABLE IF NOT EXISTS payments (
-  id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  invoice_id     UUID NOT NULL REFERENCES invoices(id),
-  amount         NUMERIC(10,2) NOT NULL,
-  payment_method TEXT NOT NULL,
-  reference      TEXT,
-  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-*/
+-- WhatsApp Logs Policies
+DROP POLICY IF EXISTS "Authenticated can read whatsapp logs" ON whatsapp_logs;
+CREATE POLICY "Authenticated can read whatsapp logs" ON whatsapp_logs FOR SELECT TO authenticated USING (TRUE);
+
+DROP POLICY IF EXISTS "Authenticated can insert whatsapp logs" ON whatsapp_logs;
+CREATE POLICY "Authenticated can insert whatsapp logs" ON whatsapp_logs FOR INSERT TO authenticated WITH CHECK (TRUE);
+
+DROP POLICY IF EXISTS "Super admin can manage whatsapp logs" ON whatsapp_logs;
+CREATE POLICY "Super admin can manage whatsapp logs" ON whatsapp_logs FOR ALL USING (get_user_role() = 'super_admin');

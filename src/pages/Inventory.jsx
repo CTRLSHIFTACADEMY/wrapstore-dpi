@@ -2,11 +2,13 @@ import React, { useEffect, useState } from 'react'
 import {
   Search, Filter, ArrowUpDown, ChevronLeft, ChevronRight,
   Plus, Minus, RotateCcw, AlertTriangle, Trash2,
-  History, X, Check, Image as ImageIcon, RefreshCw, Package
+  History, X, Check, Image as ImageIcon, RefreshCw, Package,
+  TrendingUp, XCircle, ArrowUpRight
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import ProductImageHover from '../components/common/ProductImageHover'
 
 const PAGE_SIZE = 15
 
@@ -36,10 +38,18 @@ const getStockStatus = (p) => {
   return { label: 'IN STOCK', class: 'badge-success', dot: 'var(--success)' }
 }
 
-const PRODUCT_TYPES = {
-  iphone_case: 'iPhone Case',
-  samsung_case: 'Samsung Case',
-  mobile_sticker: 'Mobile Sticker',
+const formatProductType = (p) => {
+  if (p?.categories?.name) return p.categories.name
+  const type = p?.product_type || (typeof p === 'string' ? p : '')
+  if (!type) return 'General'
+  const known = {
+    iphone_case: 'iPhone Case',
+    samsung_case: 'Samsung Case',
+    mobile_sticker: 'Mobile Sticker',
+    accessories: 'Accessories',
+  }
+  if (known[type]) return known[type]
+  return type.split(/[-_]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
 }
 
 // ---- Stock Management Modal ----
@@ -307,8 +317,32 @@ const HistoryModal = ({ product, onClose }) => {
 }
 
 // ---- Main Inventory Page ----
+const StatCard = ({ icon: Icon, label, value, sub, iconBg, iconColor, onClick, active }) => (
+  <div
+    className="stat-card"
+    onClick={onClick}
+    style={{
+      cursor: onClick ? 'pointer' : 'default',
+      border: active ? '2px solid var(--brand-black)' : '1px solid var(--border)',
+      transition: 'all 0.15s ease',
+      background: active ? '#f9fafb' : '#ffffff',
+    }}
+  >
+    <div className="stat-icon" style={{ background: iconBg }}>
+      <Icon size={20} color={iconColor} strokeWidth={2.5} />
+    </div>
+    <div className="stat-content">
+      <div className="stat-label">{label}</div>
+      <div className="stat-value">{value}</div>
+      {sub && <div className="stat-sub">{sub}</div>}
+    </div>
+    {onClick && <ArrowUpRight size={16} color="var(--text-muted)" style={{ alignSelf: 'flex-start', marginTop: 4 }} />}
+  </div>
+)
+
 const Inventory = () => {
   const [products, setProducts] = useState([])
+  const [categories, setCategories] = useState([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
@@ -322,6 +356,31 @@ const Inventory = () => {
   const [stockModal, setStockModal] = useState(null)
   const [historyModal, setHistoryModal] = useState(null)
 
+  const [summaryData, setSummaryData] = useState({
+    inventoryValue: 0,
+    lowStockCount: 0,
+    outOfStockCount: 0,
+  })
+
+  const fetchSummaryMetrics = async () => {
+    const { data: allProds } = await supabase
+      .from('products')
+      .select('current_stock, selling_price, min_stock_level')
+      .eq('approval_status', 'APPROVED')
+      .eq('is_active', true)
+
+    const list = allProds || []
+    const inventoryValue = list.reduce((s, p) => s + Number(p.current_stock || 0) * Number(p.selling_price || 0), 0)
+    const lowStockCount = list.filter(p => Number(p.current_stock || 0) > 0 && Number(p.current_stock || 0) <= Number(p.min_stock_level || 5)).length
+    const outOfStockCount = list.filter(p => Number(p.current_stock || 0) === 0).length
+
+    setSummaryData({
+      inventoryValue,
+      lowStockCount,
+      outOfStockCount,
+    })
+  }
+
   const fetchInventory = async () => {
     setLoading(true)
     let query = supabase
@@ -333,7 +392,9 @@ const Inventory = () => {
     if (search) {
       query = query.or(`name.ilike.%${search}%,product_id.ilike.%${search}%,mobile_model.ilike.%${search}%,mobile_brand.ilike.%${search}%`)
     }
-    if (typeFilter) query = query.eq('product_type', typeFilter)
+    if (typeFilter) {
+      query = query.or(`category_id.eq.${typeFilter},product_type.eq.${typeFilter}`)
+    }
     if (stockFilter === 'out') query = query.eq('current_stock', 0)
     if (stockFilter === 'low') query = query.gt('current_stock', 0)
 
@@ -344,7 +405,7 @@ const Inventory = () => {
     const { data, count } = await query
     let filtered = data || []
 
-    // Client-side low/in-stock filtering (Supabase doesn't support column comparison in filter)
+    // Client-side low/in-stock filtering
     if (stockFilter === 'low') {
       filtered = filtered.filter(p => p.current_stock > 0 && p.current_stock <= p.min_stock_level)
     } else if (stockFilter === 'in') {
@@ -355,6 +416,11 @@ const Inventory = () => {
     setTotal(count || 0)
     setLoading(false)
   }
+
+  useEffect(() => {
+    supabase.from('categories').select('*').order('sort_order').then(({ data }) => setCategories(data || []))
+    fetchSummaryMetrics()
+  }, [])
 
   useEffect(() => { fetchInventory() }, [search, typeFilter, stockFilter, sortField, sortDir, page])
 
@@ -376,9 +442,47 @@ const Inventory = () => {
           <div className="section-title">Inventory</div>
           <div className="section-subtitle">{total} approved products tracked</div>
         </div>
-        <button className="btn btn-secondary btn-sm" onClick={fetchInventory}>
+        <button className="btn btn-secondary btn-sm" onClick={() => { fetchInventory(); fetchSummaryMetrics() }}>
           <RefreshCw size={13} /> Refresh
         </button>
+      </div>
+
+      {/* Inventory Summary Cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 20 }}>
+        <StatCard
+          icon={TrendingUp}
+          label="Inventory Value"
+          value={'₹' + Number(summaryData.inventoryValue).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+          sub="Valuation at selling price"
+          iconBg="#ecfdf5"
+          iconColor="#10b981"
+        />
+        <StatCard
+          icon={AlertTriangle}
+          label="Low Stock"
+          value={summaryData.lowStockCount}
+          sub="At or below threshold"
+          iconBg="#fffbeb"
+          iconColor="#f59e0b"
+          active={stockFilter === 'low'}
+          onClick={() => {
+            setStockFilter(prev => prev === 'low' ? '' : 'low')
+            setPage(1)
+          }}
+        />
+        <StatCard
+          icon={XCircle}
+          label="Out of Stock"
+          value={summaryData.outOfStockCount}
+          sub="Requires immediate reorder"
+          iconBg="#fef2f2"
+          iconColor="#ef4444"
+          active={stockFilter === 'out'}
+          onClick={() => {
+            setStockFilter(prev => prev === 'out' ? '' : 'out')
+            setPage(1)
+          }}
+        />
       </div>
 
       {/* Toolbar */}
@@ -394,10 +498,10 @@ const Inventory = () => {
           />
         </div>
         <select className="filter-select" value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(1) }}>
-          <option value="">All Types</option>
-          <option value="iphone_case">iPhone Cases</option>
-          <option value="samsung_case">Samsung Cases</option>
-          <option value="mobile_sticker">Mobile Stickers</option>
+          <option value="">All Categories</option>
+          {categories.map(c => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
         </select>
         <select className="filter-select" value={stockFilter} onChange={e => { setStockFilter(e.target.value); setPage(1) }}>
           <option value="">All Stock</option>
@@ -450,12 +554,7 @@ const Inventory = () => {
                     return (
                       <tr key={p.id}>
                         <td>
-                          <div className="product-thumb">
-                            {imgUrl
-                              ? <img src={imgUrl} alt={p.name} />
-                              : <div className="product-thumb-placeholder"><ImageIcon size={14} /></div>
-                            }
-                          </div>
+                          <ProductImageHover src={imgUrl} title={p.name} alt={p.name} size={40} />
                         </td>
                         <td>
                           <code style={{ fontSize: '11px', background: '#f3f4f6', padding: '2px 6px', borderRadius: 4, whiteSpace: 'nowrap' }}>
@@ -463,7 +562,7 @@ const Inventory = () => {
                           </code>
                         </td>
                         <td>
-                          <div style={{ fontWeight: 600, fontSize: '13px', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <div style={{ fontWeight: 600, fontSize: '13px' }}>
                             {p.name}
                           </div>
                           {p.categories?.name && (
@@ -473,11 +572,20 @@ const Inventory = () => {
                           )}
                         </td>
                         <td>
-                          <span className="product-type-tag">{PRODUCT_TYPES[p.product_type]}</span>
+                          <span className="product-type-tag">{formatProductType(p)}</span>
                         </td>
-                        <td style={{ fontSize: '12px' }}>
+                        <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                           {p.mobile_brand && <div style={{ fontWeight: 500 }}>{p.mobile_brand}</div>}
-                          {p.mobile_model && <div style={{ color: 'var(--text-muted)' }}>{p.mobile_model}</div>}
+                          {p.mobile_model && (
+                            <div
+                              style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '2px' }}
+                              title={p.mobile_model}
+                            >
+                              {p.mobile_model.split(',').length > 2
+                                ? `${p.mobile_model.split(',').slice(0, 2).join(', ')} (+${p.mobile_model.split(',').length - 2} more)`
+                                : p.mobile_model}
+                            </div>
+                          )}
                           {!p.mobile_brand && !p.mobile_model && <span style={{ color: 'var(--text-muted)' }}>—</span>}
                         </td>
                         <td style={{ fontWeight: 700 }}>

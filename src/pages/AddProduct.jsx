@@ -5,13 +5,8 @@ import toast from 'react-hot-toast'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 
-const PRODUCT_TYPES = [
-  { value: 'iphone_case', label: 'iPhone Case', brands: ['Apple'], requiresModel: true },
-  { value: 'samsung_case', label: 'Samsung Premium Case', brands: ['Samsung'], requiresModel: true },
-  { value: 'mobile_sticker', label: 'Mobile Sticker', brands: [], requiresModel: false },
-]
-
 const IPHONE_MODELS = [
+  'iPhone 17 Pro Max', 'iPhone 17 Pro', 'iPhone 17 Plus', 'iPhone 17',
   'iPhone 16 Pro Max', 'iPhone 16 Pro', 'iPhone 16 Plus', 'iPhone 16',
   'iPhone 15 Pro Max', 'iPhone 15 Pro', 'iPhone 15 Plus', 'iPhone 15',
   'iPhone 14 Pro Max', 'iPhone 14 Pro', 'iPhone 14 Plus', 'iPhone 14',
@@ -19,6 +14,16 @@ const IPHONE_MODELS = [
   'iPhone 12 Pro Max', 'iPhone 12 Pro', 'iPhone 12 Mini', 'iPhone 12',
   'iPhone 11 Pro Max', 'iPhone 11 Pro', 'iPhone 11',
   'iPhone SE (3rd Gen)', 'iPhone SE (2nd Gen)',
+]
+
+const IPHONE_SERIES = [
+  { label: 'All Models', filter: () => IPHONE_MODELS },
+  { label: 'iPhone 13 to 17 Series', filter: () => IPHONE_MODELS.filter(m => /iPhone (1[3-7])/.test(m)) },
+  { label: 'iPhone 17 Series', filter: () => IPHONE_MODELS.filter(m => m.startsWith('iPhone 17')) },
+  { label: 'iPhone 16 Series', filter: () => IPHONE_MODELS.filter(m => m.startsWith('iPhone 16')) },
+  { label: 'iPhone 15 Series', filter: () => IPHONE_MODELS.filter(m => m.startsWith('iPhone 15')) },
+  { label: 'iPhone 14 Series', filter: () => IPHONE_MODELS.filter(m => m.startsWith('iPhone 14')) },
+  { label: 'iPhone 13 Series', filter: () => IPHONE_MODELS.filter(m => m.startsWith('iPhone 13')) },
 ]
 
 const SAMSUNG_MODELS = [
@@ -30,7 +35,29 @@ const SAMSUNG_MODELS = [
   'Samsung Galaxy Z Fold 6', 'Samsung Galaxy Z Flip 6',
 ]
 
+const SAMSUNG_SERIES = [
+  { label: 'All Models', filter: () => SAMSUNG_MODELS },
+  { label: 'S25 Series', filter: () => SAMSUNG_MODELS.filter(m => m.includes('S25')) },
+  { label: 'S24 Series', filter: () => SAMSUNG_MODELS.filter(m => m.includes('S24')) },
+  { label: 'S23 Series', filter: () => SAMSUNG_MODELS.filter(m => m.includes('S23')) },
+  { label: 'S22 Series', filter: () => SAMSUNG_MODELS.filter(m => m.includes('S22')) },
+  { label: 'A Series', filter: () => SAMSUNG_MODELS.filter(m => m.includes('Galaxy A')) },
+  { label: 'Z Fold/Flip', filter: () => SAMSUNG_MODELS.filter(m => m.includes('Z Fold') || m.includes('Z Flip')) },
+]
+
 const GST_OPTIONS = [0, 5, 12, 18, 28]
+const DEFAULT_GENERIC_COLORS = ['Black', 'White', 'Clear', 'Blue', 'Red', 'Purple']
+
+const DEFAULT_CATEGORIES = [
+  { id: 'cat-cases', name: 'Mobile Cases', slug: 'mobile-cases' },
+  { id: 'cat-accessories', name: 'Accessories', slug: 'accessories' },
+]
+
+const parseModels = (val) => {
+  if (!val) return []
+  if (Array.isArray(val)) return val
+  return val.split(',').map(m => m.trim()).filter(Boolean)
+}
 
 const AddProduct = ({ prefillData = null, productId = null, onSave = null }) => {
   const navigate = useNavigate()
@@ -76,24 +103,132 @@ const AddProduct = ({ prefillData = null, productId = null, onSave = null }) => 
     }
   }, [form.category_id])
 
-  const productTypeConfig = PRODUCT_TYPES.find(t => t.value === form.product_type)
-  const modelOptions = form.product_type === 'iphone_case' ? IPHONE_MODELS : form.product_type === 'samsung_case' ? SAMSUNG_MODELS : []
+  // Auto select initial category when categories load
+  useEffect(() => {
+    if (categories.length > 0 && !form.category_id) {
+      const first = categories[0]
+      setForm(prev => ({
+        ...prev,
+        category_id: prev.category_id || first.id,
+        product_type: prev.product_type || first.slug,
+        mobile_brand: prev.mobile_brand || (first.name.toLowerCase().includes('case') ? 'Apple' : 'Universal'),
+      }))
+    }
+  }, [categories])
+
+  const activeCategories = categories.length > 0 ? categories : DEFAULT_CATEGORIES
+
+  const modelOptions = form.mobile_brand === 'Apple' || form.product_type === 'iphone_case'
+    ? IPHONE_MODELS
+    : form.mobile_brand === 'Samsung' || form.product_type === 'samsung_case'
+    ? SAMSUNG_MODELS
+    : []
+
+  const seriesOptions = form.mobile_brand === 'Apple' || form.product_type === 'iphone_case'
+    ? IPHONE_SERIES
+    : form.mobile_brand === 'Samsung' || form.product_type === 'samsung_case'
+    ? SAMSUNG_SERIES
+    : []
+
+  const [selectedModels, setSelectedModels] = useState(() => parseModels(prefillData?.mobile_model))
+  const [modelSearch, setModelSearch] = useState('')
+
+  // Colour Variants State
+  const [availableColors, setAvailableColors] = useState(() => {
+    const prefilled = parseModels(prefillData?.color_variants || prefillData?.color)
+    return Array.from(new Set([...DEFAULT_GENERIC_COLORS, ...prefilled]))
+  })
+  const [selectedColors, setSelectedColors] = useState(() => parseModels(prefillData?.color_variants || prefillData?.color))
+  const [showAddColorInput, setShowAddColorInput] = useState(false)
+  const [newColorInput, setNewColorInput] = useState('')
+
+  useEffect(() => {
+    if (prefillData?.color_variants || prefillData?.color) {
+      const prefilled = parseModels(prefillData.color_variants || prefillData.color)
+      setSelectedColors(prefilled)
+      setAvailableColors(prev => Array.from(new Set([...prev, ...prefilled])))
+    }
+  }, [prefillData?.color_variants, prefillData?.color])
+
+  const toggleColor = (color) => {
+    setSelectedColors(prev =>
+      prev.includes(color) ? prev.filter(c => c !== color) : [...prev, color]
+    )
+  }
+
+  const handleAddCustomColor = () => {
+    const trimmed = newColorInput.trim()
+    if (!trimmed) return
+    const formatted = trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
+    if (!availableColors.includes(formatted)) {
+      setAvailableColors(prev => [...prev, formatted])
+    }
+    if (!selectedColors.includes(formatted)) {
+      setSelectedColors(prev => [...prev, formatted])
+    }
+    setNewColorInput('')
+    setShowAddColorInput(false)
+  }
+
+  useEffect(() => {
+    if (prefillData?.mobile_model !== undefined) {
+      setSelectedModels(parseModels(prefillData.mobile_model))
+    }
+  }, [prefillData?.mobile_model])
+
+  const updateSelectedModels = (newModels) => {
+    setSelectedModels(newModels)
+    const modelsStr = newModels.join(', ')
+    setForm(prev => ({ ...prev, mobile_model: modelsStr }))
+    if (errors.mobile_model) setErrors(prev => ({ ...prev, mobile_model: '' }))
+  }
+
+  const toggleModel = (model) => {
+    if (selectedModels.includes(model)) {
+      updateSelectedModels(selectedModels.filter(m => m !== model))
+    } else {
+      updateSelectedModels([...selectedModels, model])
+    }
+  }
+
+  const handleSeriesToggle = (seriesFilterFn) => {
+    const modelsInSeries = seriesFilterFn()
+    const allSelected = modelsInSeries.length > 0 && modelsInSeries.every(m => selectedModels.includes(m))
+    if (allSelected) {
+      updateSelectedModels(selectedModels.filter(m => !modelsInSeries.includes(m)))
+    } else {
+      const union = Array.from(new Set([...selectedModels, ...modelsInSeries]))
+      updateSelectedModels(union)
+    }
+  }
+
+  const clearAllModels = () => {
+    updateSelectedModels([])
+  }
 
   const set = (field, val) => {
     setForm(prev => ({ ...prev, [field]: val }))
     if (errors[field]) setErrors(prev => ({ ...prev, [field]: '' }))
   }
 
-  const handleTypeChange = (type) => {
-    const config = PRODUCT_TYPES.find(t => t.value === type)
+  const handleCategorySelect = (cat) => {
+    const slug = cat.slug || cat.name.toLowerCase().replace(/[^a-z0-9]+/g, '_')
+    const isCase = cat.name.toLowerCase().includes('case') || slug.includes('case')
+    const defaultBrand = isCase ? 'Apple' : 'Universal'
+
     setForm(prev => ({
       ...prev,
-      product_type: type,
-      mobile_brand: config?.brands[0] || '',
+      category_id: cat.id,
+      product_type: slug,
+      mobile_brand: defaultBrand,
       mobile_model: '',
-      category_id: '',
       subcategory_id: '',
     }))
+    setSelectedModels([])
+    setModelSearch('')
+    if (errors.product_type) setErrors(prev => ({ ...prev, product_type: '' }))
+    if (errors.category_id) setErrors(prev => ({ ...prev, category_id: '' }))
+    if (errors.mobile_model) setErrors(prev => ({ ...prev, mobile_model: '' }))
   }
 
   // Image handling
@@ -144,7 +279,26 @@ const AddProduct = ({ prefillData = null, productId = null, onSave = null }) => 
         .upload(path, img.file, { cacheControl: '3600', upsert: false })
 
       if (uploadErr) {
-        toast.error(`Failed to upload image: ${img.file.name}`)
+        console.warn('Supabase storage upload error:', uploadErr)
+        // Fallback to Data URL if storage bucket is missing or unconfigured
+        try {
+          const base64Url = await new Promise((resolve) => {
+            const reader = new FileReader()
+            reader.onloadend = () => resolve(reader.result)
+            reader.readAsDataURL(img.file)
+          })
+          results.push({
+            product_id: productUuid,
+            storage_path: path,
+            public_url: base64Url,
+            is_primary: img.isPrimary,
+            sort_order: results.length,
+            file_name: img.file.name,
+            file_size: img.file.size,
+          })
+        } catch (e) {
+          toast.error(`Failed to process image: ${img.file.name}`)
+        }
         continue
       }
 
@@ -166,10 +320,11 @@ const AddProduct = ({ prefillData = null, productId = null, onSave = null }) => 
   const validate = () => {
     const e = {}
     if (!form.name.trim()) e.name = 'Product name is required'
-    if (!form.product_type) e.product_type = 'Product type is required'
+    if (!form.product_type && !form.category_id) e.product_type = 'Product category is required'
     if (!form.selling_price || Number(form.selling_price) <= 0) e.selling_price = 'Valid selling price required'
     if (!form.purchase_price || Number(form.purchase_price) < 0) e.purchase_price = 'Valid purchase price required'
-    if (productTypeConfig?.requiresModel && !form.mobile_model) e.mobile_model = 'Mobile model is required for this product type'
+    const requiresModel = (form.mobile_brand === 'Apple' || form.mobile_brand === 'Samsung') && modelOptions.length > 0
+    if (requiresModel && selectedModels.length === 0) e.mobile_model = 'Select at least one compatible mobile model'
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -180,13 +335,26 @@ const AddProduct = ({ prefillData = null, productId = null, onSave = null }) => 
 
     setSaving(true)
     try {
+      // Ensure product_type matches allowed database check constraint values: ('iphone_case', 'samsung_case', 'mobile_sticker')
+      const resolveProductType = () => {
+        const rawType = (form.product_type || '').toLowerCase()
+        if (['iphone_case', 'samsung_case', 'mobile_sticker'].includes(rawType)) return rawType
+        if (rawType.includes('sticker')) return 'mobile_sticker'
+        if (form.mobile_brand === 'Samsung') return 'samsung_case'
+        if (form.mobile_brand === 'Apple') return 'iphone_case'
+        return 'iphone_case'
+      }
+
+      const colorsStr = selectedColors.length > 0 ? selectedColors.join(', ') : null
+
       const payload = {
         name: form.name.trim(),
-        product_type: form.product_type,
+        product_type: resolveProductType(),
         category_id: form.category_id || null,
         subcategory_id: form.subcategory_id || null,
         mobile_brand: form.mobile_brand || null,
-        mobile_model: form.mobile_model || null,
+        mobile_model: selectedModels.length > 0 ? selectedModels.join(', ') : (form.mobile_model || null),
+        color_variants: colorsStr,
         description: form.description || null,
         purchase_price: Number(form.purchase_price),
         selling_price: Number(form.selling_price),
@@ -205,12 +373,31 @@ const AddProduct = ({ prefillData = null, productId = null, onSave = null }) => 
 
       if (productId) {
         // Edit mode
-        const { error } = await supabase.from('products').update(payload).eq('id', productId)
-        if (error) throw error
+        let { data, error } = await supabase.from('products').update(payload).eq('id', productId)
+        if (error && (error.message?.includes('color_variants') || error.code === 'PGRST204')) {
+          delete payload.color_variants
+          if (colorsStr && !payload.description?.includes('Colour Variants:')) {
+            payload.description = payload.description ? `${payload.description}\n\nColour Variants: ${colorsStr}` : `Colour Variants: ${colorsStr}`
+          }
+          const retry = await supabase.from('products').update(payload).eq('id', productId)
+          if (retry.error) throw retry.error
+        } else if (error) {
+          throw error
+        }
       } else {
         // Create mode
-        const { data, error } = await supabase.from('products').insert(payload).select().single()
-        if (error) throw error
+        let { data, error } = await supabase.from('products').insert(payload).select().single()
+        if (error && (error.message?.includes('color_variants') || error.code === 'PGRST204')) {
+          delete payload.color_variants
+          if (colorsStr && !payload.description?.includes('Colour Variants:')) {
+            payload.description = payload.description ? `${payload.description}\n\nColour Variants: ${colorsStr}` : `Colour Variants: ${colorsStr}`
+          }
+          const retry = await supabase.from('products').insert(payload).select().single()
+          if (retry.error) throw retry.error
+          data = retry.data
+        } else if (error) {
+          throw error
+        }
         productUuid = data.id
 
         // Record initial stock movement
@@ -283,82 +470,351 @@ const AddProduct = ({ prefillData = null, productId = null, onSave = null }) => 
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Product Type <span className="required">*</span></label>
+                  <label className="form-label">Product Category <span className="required">*</span></label>
                   <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                    {PRODUCT_TYPES.map(t => (
-                      <label
-                        key={t.value}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          padding: '9px 14px',
-                          border: `2px solid ${form.product_type === t.value ? 'var(--brand-black)' : 'var(--border-strong)'}`,
-                          borderRadius: 'var(--radius)',
-                          cursor: 'pointer',
-                          fontSize: '13px',
-                          fontWeight: 500,
-                          transition: 'all var(--transition)',
-                          background: form.product_type === t.value ? '#f3f4f6' : 'white',
-                        }}
-                      >
-                        <input
-                          type="radio"
-                          name="product_type"
-                          value={t.value}
-                          checked={form.product_type === t.value}
-                          onChange={() => handleTypeChange(t.value)}
-                          style={{ display: 'none' }}
-                        />
-                        <div style={{
-                          width: '14px', height: '14px', borderRadius: '50%',
-                          border: `2px solid ${form.product_type === t.value ? 'var(--brand-black)' : 'var(--border-strong)'}`,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        }}>
-                          {form.product_type === t.value && <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--brand-black)' }} />}
-                        </div>
-                        {t.label}
-                      </label>
-                    ))}
+                    {activeCategories.map(cat => {
+                      const slug = cat.slug || cat.name.toLowerCase().replace(/[^a-z0-9]+/g, '_')
+                      const isSelected = form.category_id === cat.id || form.product_type === slug || form.product_type === cat.id
+                      return (
+                        <label
+                          key={cat.id || slug}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '9px 14px',
+                            border: `2px solid ${isSelected ? 'var(--brand-black)' : 'var(--border-strong)'}`,
+                            borderRadius: 'var(--radius)',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            fontWeight: 500,
+                            transition: 'all var(--transition)',
+                            background: isSelected ? '#f3f4f6' : 'white',
+                          }}
+                          onClick={() => handleCategorySelect(cat)}
+                        >
+                          <input
+                            type="radio"
+                            name="product_category"
+                            value={cat.id}
+                            checked={isSelected}
+                            onChange={() => handleCategorySelect(cat)}
+                            style={{ display: 'none' }}
+                          />
+                          <div style={{
+                            width: '14px', height: '14px', borderRadius: '50%',
+                            border: `2px solid ${isSelected ? 'var(--brand-black)' : 'var(--border-strong)'}`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            {isSelected && <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--brand-black)' }} />}
+                          </div>
+                          {cat.name}
+                        </label>
+                      )
+                    })}
                   </div>
                   {errors.product_type && <div className="form-error">{errors.product_type}</div>}
                 </div>
 
-                {/* Mobile Compatibility */}
-                {form.product_type && form.product_type !== 'mobile_sticker' && (
+                {/* Mobile Brand & Model Compatibility */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '18px' }}>
                   <div className="form-row">
-                    <div className="form-group">
-                      <label className="form-label">Mobile Brand</label>
-                      <input className="form-input" value={form.mobile_brand} readOnly style={{ background: '#f9fafb', color: 'var(--text-muted)' }} />
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">Brand Compatibility</label>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        {['Apple', 'Samsung', 'Universal'].map(b => (
+                          <button
+                            key={b}
+                            type="button"
+                            className={`btn btn-sm ${form.mobile_brand === b ? 'btn-primary' : 'btn-secondary'}`}
+                            style={{ padding: '6px 12px', fontSize: '12px' }}
+                            onClick={() => {
+                              set('mobile_brand', b)
+                              setSelectedModels([])
+                            }}
+                          >
+                            {b}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div className="form-group">
-                      <label className="form-label">Mobile Model <span className="required">*</span></label>
-                      <select
-                        className={`form-select ${errors.mobile_model ? 'error' : ''}`}
-                        value={form.mobile_model}
-                        onChange={e => set('mobile_model', e.target.value)}
-                        id="mobile-model"
-                      >
-                        <option value="">Select model...</option>
-                        {modelOptions.map(m => <option key={m} value={m}>{m}</option>)}
-                      </select>
-                      {errors.mobile_model && <div className="form-error">{errors.mobile_model}</div>}
-                    </div>
+                    {form.mobile_brand !== 'Universal' && (
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <label className="form-label" style={{ marginBottom: 0 }}>
+                            Compatible Mobile Models <span className="required">*</span>
+                          </label>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: selectedModels.length > 0 ? '#10b981' : 'var(--text-muted)' }}>
+                            {selectedModels.length} Selected
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
 
-                {form.product_type === 'mobile_sticker' && (
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label className="form-label">Compatible Brand <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>(optional)</span></label>
-                      <input className="form-input" placeholder="Universal / Apple / Samsung..." value={form.mobile_brand} onChange={e => set('mobile_brand', e.target.value)} />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Compatible Model <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>(optional)</span></label>
-                      <input className="form-input" placeholder="Leave blank for universal stickers" value={form.mobile_model} onChange={e => set('mobile_model', e.target.value)} />
-                    </div>
+                    {/* Multi-Select Component Container */}
+                    {form.mobile_brand !== 'Universal' && modelOptions.length > 0 && (
+                      <div style={{
+                        border: `1.5px solid ${errors.mobile_model ? 'var(--danger)' : 'var(--border-strong)'}`,
+                        borderRadius: 'var(--radius)',
+                        padding: '12px',
+                        background: '#fafafa',
+                      }}>
+                        {/* Quick Series Select Buttons */}
+                        <div style={{ marginBottom: '10px' }}>
+                          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            Quick Series Select
+                          </div>
+                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                            {seriesOptions.map((series, idx) => {
+                              const modelsInSeries = series.filter()
+                              const isFullySelected = modelsInSeries.length > 0 && modelsInSeries.every(m => selectedModels.includes(m))
+                              return (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onClick={() => handleSeriesToggle(series.filter)}
+                                  style={{
+                                    fontSize: '11px',
+                                    padding: '4px 10px',
+                                    borderRadius: 'var(--radius-full)',
+                                    border: isFullySelected ? '1px solid #10b981' : '1px solid #d1d5db',
+                                    background: isFullySelected ? '#ecfdf5' : '#ffffff',
+                                    color: isFullySelected ? '#047857' : '#374151',
+                                    fontWeight: isFullySelected ? 700 : 500,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                >
+                                  {isFullySelected ? '✓ ' : '+ '}{series.label}
+                                </button>
+                              )
+                            })}
+                            {selectedModels.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={clearAllModels}
+                                style={{
+                                  fontSize: '11px',
+                                  padding: '4px 10px',
+                                  borderRadius: 'var(--radius-full)',
+                                  border: '1px solid #fca5a5',
+                                  background: '#fef2f2',
+                                  color: '#dc2626',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Clear All ({selectedModels.length})
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Selected Models Badges */}
+                        {selectedModels.length > 0 && (
+                          <div style={{
+                            display: 'flex',
+                            gap: '6px',
+                            flexWrap: 'wrap',
+                            maxHeight: '85px',
+                            overflowY: 'auto',
+                            padding: '8px',
+                            background: '#ffffff',
+                            borderRadius: 'var(--radius)',
+                            border: '1px solid var(--border)',
+                            marginBottom: '10px',
+                          }}>
+                            {selectedModels.map(m => (
+                              <span
+                                key={m}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  background: '#111827',
+                                  color: '#ffffff',
+                                  fontSize: '11px',
+                                  fontWeight: 600,
+                                  padding: '3px 8px',
+                                  borderRadius: '12px',
+                                }}
+                              >
+                                {m}
+                                <X
+                                  size={12}
+                                  style={{ cursor: 'pointer', opacity: 0.8 }}
+                                  onClick={() => toggleModel(m)}
+                                />
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Search Filter Input */}
+                        <div style={{ marginBottom: '8px' }}>
+                          <input
+                            type="text"
+                            className="form-input"
+                            placeholder={`Search ${form.mobile_brand || 'mobile'} models...`}
+                            value={modelSearch}
+                            onChange={e => setModelSearch(e.target.value)}
+                            style={{ fontSize: '12px', padding: '6px 10px', background: '#ffffff' }}
+                          />
+                        </div>
+
+                        {/* Checkbox Grid */}
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))',
+                          gap: '4px',
+                          maxHeight: '180px',
+                          overflowY: 'auto',
+                          padding: '6px',
+                          background: '#ffffff',
+                          borderRadius: 'var(--radius)',
+                          border: '1px solid var(--border)',
+                        }}>
+                          {modelOptions
+                            .filter(m => m.toLowerCase().includes(modelSearch.toLowerCase()))
+                            .map(m => {
+                              const checked = selectedModels.includes(m)
+                              return (
+                                <label
+                                  key={m}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    padding: '5px 8px',
+                                    borderRadius: '4px',
+                                    background: checked ? '#f3f4f6' : 'transparent',
+                                    border: checked ? '1px solid #d1d5db' : '1px solid transparent',
+                                    cursor: 'pointer',
+                                    fontSize: '12px',
+                                    fontWeight: checked ? 600 : 400,
+                                    color: checked ? '#111827' : '#4b5563',
+                                    userSelect: 'none',
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => toggleModel(m)}
+                                    style={{ accentColor: '#111827', width: '14px', height: '14px', cursor: 'pointer' }}
+                                  />
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m}</span>
+                                </label>
+                              )
+                            })}
+                        </div>
+                      </div>
+                    )}
+                    {errors.mobile_model && <div className="form-error">{errors.mobile_model}</div>}
                   </div>
-                )}
+
+                {/* Colour Variants Selection */}
+                <div className="form-group" style={{ marginBottom: '18px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <label className="form-label" style={{ marginBottom: 0 }}>
+                      Colour Variants
+                    </label>
+                    {selectedColors.length > 0 && (
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#10b981' }}>
+                        {selectedColors.length} Selected ({selectedColors.join(', ')})
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    {availableColors.map(color => {
+                      const isSelected = selectedColors.includes(color)
+                      return (
+                        <button
+                          key={color}
+                          type="button"
+                          onClick={() => toggleColor(color)}
+                          style={{
+                            fontSize: '12px',
+                            padding: '6px 14px',
+                            borderRadius: 'var(--radius-full)',
+                            border: isSelected ? '1.5px solid #111827' : '1px solid #d1d5db',
+                            background: isSelected ? '#111827' : '#ffffff',
+                            color: isSelected ? '#ffffff' : '#374151',
+                            fontWeight: isSelected ? 700 : 500,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            transition: 'all 0.15s ease',
+                            boxShadow: isSelected ? '0 2px 4px rgba(0,0,0,0.08)' : 'none',
+                          }}
+                        >
+                          {isSelected && <span style={{ fontSize: '11px', fontWeight: 800 }}>✓</span>}
+                          {color}
+                        </button>
+                      )
+                    })}
+
+                    {/* + Add New Button / Inline Input */}
+                    {showAddColorInput ? (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        <input
+                          type="text"
+                          className="form-input"
+                          placeholder="Type color name..."
+                          value={newColorInput}
+                          onChange={e => setNewColorInput(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              handleAddCustomColor()
+                            }
+                          }}
+                          autoFocus
+                          style={{ fontSize: '12px', padding: '5px 10px', width: '150px', height: '32px' }}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-primary"
+                          onClick={handleAddCustomColor}
+                          style={{ padding: '5px 12px', fontSize: '12px', height: '32px' }}
+                        >
+                          Add
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-ghost"
+                          onClick={() => { setShowAddColorInput(false); setNewColorInput('') }}
+                          style={{ padding: '5px 8px', fontSize: '12px', height: '32px' }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setShowAddColorInput(true)}
+                        style={{
+                          fontSize: '12px',
+                          padding: '6px 14px',
+                          borderRadius: 'var(--radius-full)',
+                          border: '1.5px dashed #9ca3af',
+                          background: '#f9fafb',
+                          color: '#4b5563',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        + Add New
+                      </button>
+                    )}
+                  </div>
+                </div>
 
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">Description</label>

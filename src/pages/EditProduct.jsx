@@ -49,6 +49,7 @@ const EditProduct = () => {
     subcategory_id: product.subcategory_id || '',
     mobile_brand: product.mobile_brand || '',
     mobile_model: product.mobile_model || '',
+    color_variants: product.color_variants || '',
     description: product.description || '',
     purchase_price: product.purchase_price?.toString() || '',
     selling_price: product.selling_price?.toString() || '',

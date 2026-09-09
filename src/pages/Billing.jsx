@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { downloadInvoicePDF, printInvoicePDF, getInvoicePDFBlob } from '../lib/invoicePdf'
 import { sendWhatsAppInvoice, retryWhatsAppDelivery } from '../services/whatsappService'
+import ProductImageHover from '../components/common/ProductImageHover'
 
 // ---- Helpers ----
 const INR = (v) => '₹' + Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -142,9 +143,7 @@ const ProductSearch = ({ onAddToCart }) => {
                 onMouseEnter={e => e.currentTarget.style.background = '#f9fafb'}
                 onMouseLeave={e => e.currentTarget.style.background = 'white'}
               >
-                <div className="product-thumb">
-                  {img ? <img src={img} alt={p.name} /> : <ImageIcon size={14} color="var(--text-muted)" />}
-                </div>
+                <ProductImageHover src={img} title={p.name} alt={p.name} size={40} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, display: 'flex', gap: 8 }}>
@@ -550,7 +549,7 @@ const Billing = () => {
         return
       }
 
-      // ---- STEP 2: Find or create customer ----
+      // ---- STEP 2: Find or create customer (WITHOUT incrementing stats yet) ----
       let customerId = null
       const cleanPhone = customerPhone.trim().replace(/\s+/g, ' ')
 
@@ -562,21 +561,14 @@ const Billing = () => {
 
       if (existingCustomer) {
         customerId = existingCustomer.id
-        await supabase.from('customers').update({
-          name: customerName.trim(),
-          total_orders: existingCustomer.total_orders + 1,
-          total_spent: Number(existingCustomer.total_spent) + totals.grandTotal,
-          last_purchase_at: new Date().toISOString(),
-        }).eq('id', customerId)
       } else {
         const { data: newCustomer, error: custErr } = await supabase
           .from('customers')
           .insert({
             name: customerName.trim(),
             phone: cleanPhone,
-            total_orders: 1,
-            total_spent: totals.grandTotal,
-            last_purchase_at: new Date().toISOString(),
+            total_orders: 0,
+            total_spent: 0,
           })
           .select()
           .single()
@@ -586,9 +578,11 @@ const Billing = () => {
       }
 
       // ---- STEP 3: Create Invoice ----
+      const invoiceNum = `WS-INV-${Date.now().toString().slice(-6)}${Math.floor(10 + Math.random() * 90)}`
       const { data: invoice, error: invErr } = await supabase
         .from('invoices')
         .insert({
+          invoice_number: invoiceNum,
           customer_id: customerId,
           customer_name: customerName.trim(),
           customer_phone: cleanPhone,
@@ -636,6 +630,27 @@ const Billing = () => {
         .insert(invoiceItemsPayload)
 
       if (itemsErr) throw itemsErr
+
+      // ---- STEP 4b: Update Customer Totals (ONLY AFTER INVOICE & ITEMS SUCCEED) ----
+      if (customerId) {
+        const { data: custInvoices } = await supabase
+          .from('invoices')
+          .select('grand_total, created_at')
+          .eq('customer_id', customerId)
+
+        const invList = custInvoices || []
+        const exactOrders = invList.length
+        const exactSpent = invList.reduce((s, inv) => s + Number(inv.grand_total || 0), 0)
+        const sortedInvs = [...invList].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        const exactLastPurchase = sortedInvs[0]?.created_at || new Date().toISOString()
+
+        await supabase.from('customers').update({
+          name: customerName.trim(),
+          total_orders: exactOrders,
+          total_spent: exactSpent,
+          last_purchase_at: exactLastPurchase,
+        }).eq('id', customerId)
+      }
 
       // ---- STEP 5: Deduct stock + record movements ----
       for (const item of cart) {

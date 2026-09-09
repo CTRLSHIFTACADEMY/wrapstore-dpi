@@ -99,7 +99,7 @@ const Sidebar = () => {
         <NavItem to="/products" icon={Smartphone} label="Products" />
         <NavItem to="/categories" icon={Tag} label="Categories" />
         <NavItem to="/inventory" icon={Warehouse} label="Inventory" />
-        <NavItem to="/smart-inventory" icon={Sparkles} label="Smart Inventory" />
+        {/* <NavItem to="/smart-inventory" icon={Sparkles} label="Smart Inventory" /> */}
 
         {/* Customers & Reports */}
         <div style={{ height: '8px' }} />
@@ -124,7 +124,20 @@ const Sidebar = () => {
         <div style={{ height: '8px' }} />
         <div className="sidebar-section-label">System</div>
         <NavItem to="/settings" icon={Settings} label="Settings" />
-        <NavItem to="/settings/system-status" icon={Activity} label="System Status" />
+        <button
+          onClick={handleLogout}
+          className="sidebar-nav-item sidebar-logout-nav-item"
+          style={{
+            textDecoration: 'none',
+            border: 'none',
+            background: 'transparent',
+            width: '100%',
+            cursor: 'pointer',
+          }}
+        >
+          <LogOut size={16} strokeWidth={2} />
+          <span style={{ flex: 1, textAlign: 'left' }}>Log Out</span>
+        </button>
       </nav>
 
       {/* User Footer */}
@@ -140,9 +153,10 @@ const Sidebar = () => {
           <button
             className="sidebar-logout-btn"
             onClick={handleLogout}
-            title="Sign out"
+            title="Sign out of WrapStore"
           >
-            <LogOut size={15} />
+            <LogOut size={14} />
+            <span>Logout</span>
           </button>
         </div>
       </div>

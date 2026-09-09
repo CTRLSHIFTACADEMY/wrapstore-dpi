@@ -53,7 +53,8 @@ export const supabaseConfigured = !!(
   supabaseUrl &&
   supabaseAnonKey &&
   !supabaseUrl.includes('placeholder') &&
-  !isDashboardUrl
+  !isDashboardUrl &&
+  supabaseUrl.includes('.supabase.co')
 )
 
 export const isDemoMode = !supabaseConfigured

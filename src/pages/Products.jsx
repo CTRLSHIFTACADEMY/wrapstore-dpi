@@ -8,11 +8,20 @@ import {
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import ProductImageHover from '../components/common/ProductImageHover'
 
-const PRODUCT_TYPES = {
-  iphone_case: 'iPhone Case',
-  samsung_case: 'Samsung Case',
-  mobile_sticker: 'Mobile Sticker',
+const formatProductType = (p) => {
+  if (p?.categories?.name) return p.categories.name
+  const type = p?.product_type || (typeof p === 'string' ? p : '')
+  if (!type) return 'General'
+  const known = {
+    iphone_case: 'iPhone Case',
+    samsung_case: 'Samsung Case',
+    mobile_sticker: 'Mobile Sticker',
+    accessories: 'Accessories',
+  }
+  if (known[type]) return known[type]
+  return type.split(/[-_]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
 }
 
 const APPROVAL_BADGE = {
@@ -25,9 +34,14 @@ const PAGE_SIZE = 15
 
 const Products = () => {
   const [products, setProducts] = useState([])
+  const [categories, setCategories] = useState([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    supabase.from('categories').select('*').order('sort_order').then(({ data }) => setCategories(data || []))
+  }, [])
 
   // Filters
   const [search, setSearch] = useState('')
@@ -57,7 +71,9 @@ const Products = () => {
     if (search) {
       query = query.or(`name.ilike.%${search}%,product_id.ilike.%${search}%,mobile_model.ilike.%${search}%,mobile_brand.ilike.%${search}%`)
     }
-    if (typeFilter) query = query.eq('product_type', typeFilter)
+    if (typeFilter) {
+      query = query.or(`category_id.eq.${typeFilter},product_type.eq.${typeFilter}`)
+    }
     if (statusFilter) query = query.eq('approval_status', statusFilter)
 
     query = query
@@ -129,10 +145,10 @@ const Products = () => {
           onChange={e => { setTypeFilter(e.target.value); setPage(1) }}
           id="type-filter"
         >
-          <option value="">All Types</option>
-          <option value="iphone_case">iPhone Cases</option>
-          <option value="samsung_case">Samsung Cases</option>
-          <option value="mobile_sticker">Mobile Stickers</option>
+          <option value="">All Categories</option>
+          {categories.map(c => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
         </select>
 
         <select
@@ -142,8 +158,8 @@ const Products = () => {
           id="status-filter"
         >
           <option value="">All Status</option>
-          <option value="PENDING_APPROVAL">Pending</option>
           <option value="APPROVED">Approved</option>
+          <option value="PENDING_APPROVAL">Pending Approval</option>
           <option value="REJECTED">Rejected</option>
         </select>
       </div>
@@ -156,76 +172,61 @@ const Products = () => {
           <div className="empty-state">
             <div className="empty-state-icon"><Package size={24} /></div>
             <h3>No products found</h3>
-            <p>Try adjusting your search or add a new product.</p>
-            <button className="btn btn-primary" onClick={() => navigate('/products/add')}>
-              <Plus size={14} /> Add Product
-            </button>
+            <p>Try adjusting your search or filter criteria.</p>
           </div>
         ) : (
           <>
-            <div className="table-container" style={{ border: 'none', borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0' }}>
-              <table>
+            <div className="table-container" style={{ border: 'none', borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0', width: '100%' }}>
+              <table style={{ width: '100%' }}>
                 <thead>
                   <tr>
                     <th style={{ width: 52 }}>Image</th>
-                    <th onClick={() => handleSort('product_id')} style={{ cursor: 'pointer' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        ID <ArrowUpDown size={11} />
-                      </span>
+                    <th onClick={() => handleSort('product_id')} style={{ width: 110 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>Product ID <ArrowUpDown size={11} /></span>
                     </th>
                     <th onClick={() => handleSort('name')}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        Product <ArrowUpDown size={11} />
-                      </span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>Product Name <ArrowUpDown size={11} /></span>
                     </th>
-                    <th>Type</th>
-                    <th>Brand / Model</th>
-                    <th onClick={() => handleSort('selling_price')}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        Price <ArrowUpDown size={11} />
-                      </span>
+                    <th style={{ width: 140 }}>Category</th>
+                    <th style={{ width: 180 }}>Brand / Models</th>
+                    <th onClick={() => handleSort('selling_price')} style={{ width: 110 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>Price <ArrowUpDown size={11} /></span>
                     </th>
-                    <th onClick={() => handleSort('current_stock')}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        Stock <ArrowUpDown size={11} />
-                      </span>
+                    <th onClick={() => handleSort('current_stock')} style={{ width: 100 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>Stock <ArrowUpDown size={11} /></span>
                     </th>
-                    <th>Stock Status</th>
-                    <th>Approval</th>
-                    <th style={{ width: 100 }}>Actions</th>
+                    <th style={{ width: 120 }}>Stock Status</th>
+                    <th style={{ width: 130 }}>Approval</th>
+                    <th style={{ width: 90, textAlign: 'right' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {products.map(p => {
                     const imgUrl = getPrimaryImage(p.product_images)
                     const stockStatus = getStockStatus(p)
-                    const approvalBadge = APPROVAL_BADGE[p.approval_status]
+                    const appStatus = APPROVAL_BADGE[p.approval_status] || APPROVAL_BADGE.PENDING_APPROVAL
+
                     return (
                       <tr key={p.id}>
                         <td>
-                          <div className="product-thumb">
-                            {imgUrl
-                              ? <img src={imgUrl} alt={p.name} />
-                              : <div className="product-thumb-placeholder"><ImageIcon size={14} /></div>
-                            }
-                          </div>
+                          <ProductImageHover src={imgUrl} title={p.name} alt={p.name} size={40} />
                         </td>
                         <td>
-                          <code style={{ fontSize: '11px', background: '#f3f4f6', padding: '2px 6px', borderRadius: 4, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-                            {p.product_id || '—'}
+                          <code style={{ fontSize: '11px', background: '#f3f4f6', padding: '2px 6px', borderRadius: 4, whiteSpace: 'nowrap' }}>
+                            {p.product_id || 'PENDING'}
                           </code>
                         </td>
                         <td>
-                          <div style={{ fontWeight: 600, fontSize: '13px', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <div style={{ fontWeight: 600, fontSize: '13px' }}>
                             {p.name}
                           </div>
                           {p.categories?.name && (
-                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: 2 }}>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: 1 }}>
                               {p.categories.name}{p.subcategories?.name ? ` › ${p.subcategories.name}` : ''}
                             </div>
                           )}
                           {p.approval_status === 'REJECTED' && p.rejection_reason && (
-                            <div style={{ fontSize: '11px', color: 'var(--danger)', marginTop: 2, maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <div style={{ fontSize: '11px', color: 'var(--danger)', marginTop: 2 }}>
                               ✕ {p.rejection_reason}
                             </div>
                           )}
@@ -233,12 +234,21 @@ const Products = () => {
                         <td>
                           <span className="product-type-tag">
                             <Smartphone size={10} />
-                            {PRODUCT_TYPES[p.product_type]}
+                            {formatProductType(p)}
                           </span>
                         </td>
                         <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                           {p.mobile_brand && <div style={{ fontWeight: 500 }}>{p.mobile_brand}</div>}
-                          {p.mobile_model && <div style={{ color: 'var(--text-muted)' }}>{p.mobile_model}</div>}
+                          {p.mobile_model && (
+                            <div
+                              style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '2px' }}
+                              title={p.mobile_model}
+                            >
+                              {p.mobile_model.split(',').length > 2
+                                ? `${p.mobile_model.split(',').slice(0, 2).join(', ')} (+${p.mobile_model.split(',').length - 2} more)`
+                                : p.mobile_model}
+                            </div>
+                          )}
                           {!p.mobile_brand && !p.mobile_model && <span style={{ color: 'var(--text-muted)' }}>—</span>}
                         </td>
                         <td>
@@ -255,7 +265,7 @@ const Products = () => {
                           <span className={`badge ${stockStatus.class}`}>{stockStatus.label}</span>
                         </td>
                         <td>
-                          <span className={`badge ${approvalBadge.class}`}>{approvalBadge.label}</span>
+                          <span className={`badge ${appStatus.class}`}>{appStatus.label}</span>
                         </td>
                         <td>
                           <div className="table-actions">

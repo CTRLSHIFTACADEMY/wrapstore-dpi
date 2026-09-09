@@ -252,29 +252,67 @@ ul, ol { list-style: none; }
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: #2a2a2a;
+  background: #374151;
+  color: white;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
   font-weight: 700;
-  color: white;
+  font-size: 12px;
   flex-shrink: 0;
 }
 
-.sidebar-user-info { flex: 1; min-width: 0; }
+.sidebar-user-info {
+  flex: 1;
+  min-width: 0;
+}
+
 .sidebar-user-name {
-  font-size: 13px;
   font-weight: 600;
-  color: var(--sidebar-text-active);
-  white-space: nowrap;
+  font-size: 13px;
+  color: white;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
+
 .sidebar-user-role {
   font-size: 11px;
-  color: var(--sidebar-text);
+  color: #9ca3af;
   text-transform: capitalize;
+}
+
+.sidebar-logout-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.sidebar-logout-btn:hover {
+  background: #ef4444;
+  color: #ffffff;
+  border-color: #ef4444;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.35);
+}
+
+.sidebar-logout-nav-item {
+  color: #f87171 !important;
+  transition: all 0.2s ease !important;
+}
+
+.sidebar-logout-nav-item:hover {
+  background: rgba(239, 68, 68, 0.15) !important;
+  color: #ef4444 !important;
 }
 
 .sidebar-logout {
@@ -1043,7 +1081,12 @@ tbody td {
   color: var(--text-secondary);
 }
 
-/* ---- PRODUCT IMAGE THUMB ---- */
+/* ---- PRODUCT IMAGE THUMB & HOVER MAGNIFIER ---- */
+.product-thumb-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
 .product-thumb {
   width: 40px;
   height: 40px;
@@ -1055,10 +1098,84 @@ tbody td {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.product-thumb-wrapper:hover .product-thumb {
+  border-color: var(--brand-black);
+  transform: scale(1.04);
 }
 
 .product-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .product-thumb-placeholder { color: var(--text-muted); }
+
+.thumb-zoom-badge {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  background: rgba(17, 24, 39, 0.75);
+  border-radius: 4px;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.product-thumb-wrapper:hover .thumb-zoom-badge {
+  opacity: 1;
+}
+
+.product-thumb-hover-preview {
+  position: absolute;
+  left: calc(100% + 12px);
+  top: 50%;
+  transform: translateY(-50%) scale(0.92);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 2000;
+  background: #ffffff;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.25), 0 10px 15px -5px rgba(0, 0, 0, 0.1);
+  padding: 8px;
+  width: 260px;
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.product-thumb-wrapper.preview-left .product-thumb-hover-preview {
+  left: auto;
+  right: calc(100% + 12px);
+}
+
+.product-thumb-wrapper:hover .product-thumb-hover-preview {
+  opacity: 1;
+  transform: translateY(-50%) scale(1);
+}
+
+.product-thumb-hover-preview img {
+  width: 100%;
+  height: 240px;
+  object-fit: contain;
+  background: #f9fafb;
+  border-radius: 8px;
+  display: block;
+}
+
+.product-thumb-hover-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-top: 6px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 4px;
+}
 
 /* ---- STOCK STATUS ---- */
 .stock-in    { color: var(--success); font-weight: 600; }

@@ -9,7 +9,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Package, Warehouse, TrendingUp, AlertTriangle,
   XCircle, ArrowUpRight, Clock, CheckCircle2, RefreshCw,
-  ShoppingBag, CreditCard, MessageCircle, Plus, Sparkles,
+  ShoppingBag, CreditCard, MessageCircle, Sparkles,
   ChevronRight, BarChart2
 } from 'lucide-react'
 import {
@@ -172,9 +172,6 @@ const Dashboard = () => {
           <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Store Operations & Physical POS Summary</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-primary btn-sm" onClick={() => navigate('/billing')}>
-            <Plus size={13} /> New Invoice
-          </button>
           <button className="btn btn-secondary btn-sm" onClick={fetchData}>
             <RefreshCw size={13} /> Refresh
           </button>
@@ -225,39 +222,6 @@ const Dashboard = () => {
           iconBg="#eff6ff"
           iconColor="#3b82f6"
           onClick={() => navigate('/inventory')}
-        />
-
-        {/* 5. Inventory Value */}
-        <StatCard
-          icon={TrendingUp}
-          label="Inventory Value"
-          value={INR_SHORT(metrics.inventoryValue)}
-          sub="Valuation at selling price"
-          iconBg="#ecfdf5"
-          iconColor="#10b981"
-          onClick={() => navigate('/reports')}
-        />
-
-        {/* 6. Low Stock */}
-        <StatCard
-          icon={AlertTriangle}
-          label="Low Stock"
-          value={metrics.lowStockCount}
-          sub="At or below threshold"
-          iconBg="#fffbeb"
-          iconColor="#f59e0b"
-          onClick={() => navigate('/smart-inventory')}
-        />
-
-        {/* 7. Out of Stock */}
-        <StatCard
-          icon={XCircle}
-          label="Out of Stock"
-          value={metrics.outOfStockCount}
-          sub="Requires immediate reorder"
-          iconBg="#fef2f2"
-          iconColor="#ef4444"
-          onClick={() => navigate('/smart-inventory')}
         />
 
         {/* Super admin approval queue (if applicable) */}

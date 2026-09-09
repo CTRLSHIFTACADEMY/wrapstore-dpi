@@ -64,19 +64,26 @@ const CustomerModal = ({ customer, onClose }) => {
         </div>
 
         <div className="modal-body">
-          {/* Stats */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 20 }}>
-            {[
-              ['Total Orders', customer.total_orders],
-              ['Total Spent', INR(customer.total_spent)],
-              ['Last Purchase', customer.last_purchase_at ? formatDate(customer.last_purchase_at) : '—'],
-            ].map(([label, value]) => (
-              <div key={label} style={{ background: '#f9fafb', borderRadius: 'var(--radius)', padding: '12px 14px' }}>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>{label}</div>
-                <div style={{ fontWeight: 800, fontSize: 16 }}>{value}</div>
+          {/* Stats computed from actual invoices */}
+          {(() => {
+            const actualCount = invoices.length
+            const actualSpent = invoices.reduce((sum, inv) => sum + Number(inv.grand_total || 0), 0)
+            const actualLast = invoices[0]?.created_at || null
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 20 }}>
+                {[
+                  ['Total Orders', actualCount],
+                  ['Total Spent', INR(actualSpent)],
+                  ['Last Purchase', actualLast ? formatDate(actualLast) : '—'],
+                ].map(([label, value]) => (
+                  <div key={label} style={{ background: '#f9fafb', borderRadius: 'var(--radius)', padding: '12px 14px' }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>{label}</div>
+                    <div style={{ fontWeight: 800, fontSize: 16 }}>{value}</div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            )
+          })()}
 
           {/* Purchase History */}
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 10 }}>
@@ -167,7 +174,7 @@ const Customers = () => {
     setLoading(true)
     let query = supabase
       .from('customers')
-      .select('*', { count: 'exact' })
+      .select('*, invoices(id, grand_total, created_at, customer_phone)', { count: 'exact' })
 
     if (search) {
       query = query.or(`name.ilike.%${search}%,phone.ilike.%${search}%`)
@@ -178,7 +185,34 @@ const Customers = () => {
       .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
 
     const { data, count } = await query
-    setCustomers(data || [])
+    const rawList = data || []
+
+    // Reconcile and calculate exact metrics from customer's actual invoices
+    const reconciled = rawList.map(c => {
+      const invs = c.invoices || []
+      const trueOrders = invs.length
+      const trueSpent = invs.reduce((sum, inv) => sum + Number(inv.grand_total || 0), 0)
+      const sortedInvs = [...invs].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      const trueLast = sortedInvs[0]?.created_at || c.last_purchase_at
+
+      // Self-heal DB record if stored stats differ from actual invoices sum
+      if (c.total_orders !== trueOrders || Number(c.total_spent) !== trueSpent) {
+        supabase.from('customers').update({
+          total_orders: trueOrders,
+          total_spent: trueSpent,
+          last_purchase_at: trueLast,
+        }).eq('id', c.id).then(() => {})
+      }
+
+      return {
+        ...c,
+        total_orders: trueOrders,
+        total_spent: trueSpent,
+        last_purchase_at: trueLast,
+      }
+    })
+
+    setCustomers(reconciled)
     setTotal(count || 0)
     setLoading(false)
   }

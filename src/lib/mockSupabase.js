@@ -60,7 +60,7 @@ const INITIAL_STORE = {
 
   categories: [
     { id: CAT_CASES_ID, name: 'Mobile Cases', slug: 'mobile-cases', description: 'Protective cases for mobile phones', sort_order: 1, is_active: true, created_at: now, updated_at: now },
-    { id: CAT_STICKERS_ID, name: 'Mobile Stickers', slug: 'mobile-stickers', description: 'Decorative stickers for mobile devices', sort_order: 2, is_active: true, created_at: now, updated_at: now },
+    { id: 'cat-003', name: 'Accessories', slug: 'accessories', description: 'Mobile accessories and peripherals', sort_order: 2, is_active: true, created_at: now, updated_at: now },
   ],
 
   subcategories: [
@@ -207,10 +207,29 @@ const INITIAL_STORE = {
   ],
 }
 
-// Deep clone to avoid mutation of initial data
-let mockDB = JSON.parse(JSON.stringify(INITIAL_STORE))
-let productIdCounter = 9
-let invoiceIdCounter = 5
+const STORAGE_KEY = 'wrapstore_mock_db_v2'
+const loadMockDB = () => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY)
+    if (saved) return JSON.parse(saved)
+  } catch (e) {
+    console.warn('Error loading mockDB', e)
+  }
+  return JSON.parse(JSON.stringify(INITIAL_STORE))
+}
+
+let mockDB = loadMockDB()
+
+const saveMockDB = () => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(mockDB))
+  } catch (e) {
+    console.warn('Error saving mockDB', e)
+  }
+}
+
+let productIdCounter = (mockDB.products?.length || 0) + 10
+let invoiceIdCounter = (mockDB.invoices?.length || 0) + 10
 
 // ---- HELPER: generate product ID ----
 const generateProductId = () => {
@@ -394,9 +413,13 @@ class QueryBuilder {
       if (sel.includes('invoice_items(') && row.id && this._table === 'invoices') {
         enriched.invoice_items = mockDB.invoice_items.filter(ii => ii.invoice_id === row.id)
       }
-      // invoice join for invoice_items (reverse)
-      if (sel.includes('invoices(') && row.invoice_id) {
-        enriched.invoices = mockDB.invoices.find(inv => inv.id === row.invoice_id) || null
+      // invoices join for customers (or invoice_items reverse)
+      if (sel.includes('invoices(')) {
+        if (this._table === 'customers') {
+          enriched.invoices = mockDB.invoices.filter(inv => inv.customer_id === row.id || (inv.customer_phone && inv.customer_phone.trim() === row.phone?.trim()))
+        } else if (row.invoice_id) {
+          enriched.invoices = mockDB.invoices.find(inv => inv.id === row.invoice_id) || null
+        }
       }
       // profiles join for invoices (created_by)
       if (sel.includes('profiles(') && row.created_by && this._table === 'invoices') {
@@ -483,6 +506,7 @@ class QueryBuilder {
         inserted.push(newRow)
       }
 
+      saveMockDB()
       if (this._single) return { data: inserted[0], error: null }
       return { data: inserted, error: null }
     }
@@ -494,6 +518,7 @@ class QueryBuilder {
         Object.assign(row, this._data, { updated_at: new Date().toISOString() })
         updated.push(row)
       }
+      saveMockDB()
       if (this._single) return { data: updated[0] || null, error: null }
       return { data: updated, error: null }
     }
@@ -502,6 +527,7 @@ class QueryBuilder {
       const toDelete = this._applyFilters(table)
       const ids = new Set(toDelete.map(r => r.id))
       mockDB[this._table] = table.filter(r => !ids.has(r.id))
+      saveMockDB()
       return { data: toDelete, error: null }
     }
 
