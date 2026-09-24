@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Tag, Package, Warehouse,
   Settings, LogOut, ShieldCheck, Smartphone,
   Receipt, FileText, Users, TrendingUp, Sparkles,
-  BarChart2, FileBarChart, Activity
+  BarChart2, FileBarChart, Activity, Globe, ShoppingBag
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
@@ -45,6 +45,26 @@ const Sidebar = () => {
 
     return () => supabase.removeChannel(channel)
   }, [isSuperAdmin])
+
+  // Live count of online orders that need action
+  const [onlineOrdersCount, setOnlineOrdersCount] = useState(0)
+  useEffect(() => {
+    const fetchOnlineOrders = async () => {
+      const { count } = await supabase
+        .from('online_orders')
+        .select('*', { count: 'exact', head: true })
+        .in('order_status', ['PENDING', 'CONFIRMED', 'PROCESSING'])
+      setOnlineOrdersCount(count || 0)
+    }
+    fetchOnlineOrders()
+
+    const channel = supabase
+      .channel('online-orders-sidebar')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'online_orders' }, fetchOnlineOrders)
+      .subscribe()
+
+    return () => supabase.removeChannel(channel)
+  }, [])
 
   const handleLogout = async () => {
     await signOut()
@@ -120,6 +140,21 @@ const Sidebar = () => {
             />
           </>
         )}
+
+        {/* Online Channel */}
+        <div style={{ height: '8px' }} />
+        <div className="sidebar-section-label">Online Channel</div>
+        <NavItem
+          to="/online-orders"
+          icon={Globe}
+          label="Online Orders"
+          badge={onlineOrdersCount}
+        />
+        <NavItem
+          to="/online-sales"
+          icon={ShoppingBag}
+          label="Manual Channel Sales"
+        />
 
         <div style={{ height: '8px' }} />
         <div className="sidebar-section-label">System</div>

@@ -79,9 +79,7 @@ const AddProduct = ({ prefillData = null, productId = null, onSave = null }) => 
     mobile_brand: '',
     mobile_model: '',
     description: '',
-    purchase_price: '',
     selling_price: '',
-    discount_percentage: '0',
     gst_percentage: '18',
     initial_stock: '',
     min_stock_level: '5',
@@ -322,7 +320,6 @@ const AddProduct = ({ prefillData = null, productId = null, onSave = null }) => 
     if (!form.name.trim()) e.name = 'Product name is required'
     if (!form.product_type && !form.category_id) e.product_type = 'Product category is required'
     if (!form.selling_price || Number(form.selling_price) <= 0) e.selling_price = 'Valid selling price required'
-    if (!form.purchase_price || Number(form.purchase_price) < 0) e.purchase_price = 'Valid purchase price required'
     const requiresModel = (form.mobile_brand === 'Apple' || form.mobile_brand === 'Samsung') && modelOptions.length > 0
     if (requiresModel && selectedModels.length === 0) e.mobile_model = 'Select at least one compatible mobile model'
     setErrors(e)
@@ -356,9 +353,9 @@ const AddProduct = ({ prefillData = null, productId = null, onSave = null }) => 
         mobile_model: selectedModels.length > 0 ? selectedModels.join(', ') : (form.mobile_model || null),
         color_variants: colorsStr,
         description: form.description || null,
-        purchase_price: Number(form.purchase_price),
+        purchase_price: 0,
         selling_price: Number(form.selling_price),
-        discount_percentage: Number(form.discount_percentage) || 0,
+        discount_percentage: 0,
         gst_percentage: Number(form.gst_percentage) || 18,
         current_stock: productId ? undefined : Number(form.initial_stock) || 0,
         min_stock_level: Number(form.min_stock_level) || 5,
@@ -867,20 +864,6 @@ const AddProduct = ({ prefillData = null, productId = null, onSave = null }) => 
               <div className="card-body">
                 <div className="form-row">
                   <div className="form-group">
-                    <label className="form-label">Purchase Price (₹) <span className="required">*</span></label>
-                    <input
-                      type="number"
-                      className={`form-input ${errors.purchase_price ? 'error' : ''}`}
-                      placeholder="0.00"
-                      min="0"
-                      step="0.01"
-                      value={form.purchase_price}
-                      onChange={e => set('purchase_price', e.target.value)}
-                      id="purchase-price"
-                    />
-                    {errors.purchase_price && <div className="form-error">{errors.purchase_price}</div>}
-                  </div>
-                  <div className="form-group">
                     <label className="form-label">Selling Price (₹) <span className="required">*</span></label>
                     <input
                       type="number"
@@ -893,20 +876,6 @@ const AddProduct = ({ prefillData = null, productId = null, onSave = null }) => 
                       id="selling-price"
                     />
                     {errors.selling_price && <div className="form-error">{errors.selling_price}</div>}
-                  </div>
-                </div>
-                <div className="form-row">
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">Discount (%)</label>
-                    <input
-                      type="number"
-                      className="form-input"
-                      placeholder="0"
-                      min="0"
-                      max="100"
-                      value={form.discount_percentage}
-                      onChange={e => set('discount_percentage', e.target.value)}
-                    />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">GST (%)</label>
